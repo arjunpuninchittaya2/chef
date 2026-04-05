@@ -1,10 +1,10 @@
 (function() {
   'use strict';
 
-  const registry = globalThis.BrowserKingRegistry;
+  const registry = globalThis.ChefRegistry;
 
   if (!registry) {
-    console.error('[Provider Config] BrowserKingRegistry is not available');
+    console.error('[Provider Config] ChefRegistry is not available');
     return;
   }
 

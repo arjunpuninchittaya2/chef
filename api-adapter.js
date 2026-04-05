@@ -51,7 +51,7 @@
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const originalFetch = globalThis.fetch.bind(globalThis);
-  const registry = globalThis.BrowserKingRegistry || null;
+  const registry = globalThis.ChefRegistry || null;
 
   async function writeDebugLog(entry) {
     try {
@@ -565,7 +565,7 @@
 
       nextContent.unshift({
         type: 'text',
-        text: `[BrowserKing note] ${omittedImages} image attachment(s) were omitted because ${modelName} is configured as a text-only model.`
+        text: `[Chef note] ${omittedImages} image attachment(s) were omitted because ${modelName} is configured as a text-only model.`
       });
 
       return {
