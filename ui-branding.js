@@ -1,28 +1,28 @@
 (function() {
   'use strict';
 
-  const registry = globalThis.BrowserKingRegistry;
+  const registry = globalThis.ChefRegistry;
   if (!registry) {
     return;
   }
 
   const replacements = [
-    ['Claude in Chrome settings', 'BrowserKing settings'],
-    ['Claude for Chrome', 'BrowserKing'],
-    ['Claude Options', 'BrowserKing Settings'],
-    ['Open Claude', 'Open BrowserKing'],
-    ['Toggle Claude side panel', 'Toggle BrowserKing side panel'],
-    ['Teach Claude your workflow', 'Teach BrowserKing your workflow'],
-    ['Claude is active in this tab group', 'BrowserKing is active in this tab group'],
-    ['Stop Claude', 'Stop BrowserKing'],
-    ['Claude content', 'BrowserKing content'],
-    ['HIGH RISK: Claude can take most actions on the internet now.', 'HIGH RISK: BrowserKing can take most actions on the internet now.'],
-    ['Claude can take screenshots when responding.', 'BrowserKing can take screenshots when responding.'],
-    ['Claude is AI and can make mistakes.', 'BrowserKing is AI and can make mistakes.'],
-    ['Message Claude...', 'Message BrowserKing...'],
-    ['Reply to Claude', 'Reply to BrowserKing'],
-    ['Teach Claude', 'Teach BrowserKing'],
-    ['Pin Claude for quick access', 'Pin BrowserKing for quick access']
+    ['Claude in Chrome settings', 'Chef settings'],
+    ['Claude for Chrome', 'Chef'],
+    ['Claude Options', 'Chef Settings'],
+    ['Open Claude', 'Open Chef'],
+    ['Toggle Claude side panel', 'Toggle Chef side panel'],
+    ['Teach Claude your workflow', 'Teach Chef your workflow'],
+    ['Claude is active in this tab group', 'Chef is active in this tab group'],
+    ['Stop Claude', 'Stop Chef'],
+    ['Claude content', 'Chef content'],
+    ['HIGH RISK: Claude can take most actions on the internet now.', 'HIGH RISK: Chef can take most actions on the internet now.'],
+    ['Claude can take screenshots when responding.', 'Chef can take screenshots when responding.'],
+    ['Claude is AI and can make mistakes.', 'Chef is AI and can make mistakes.'],
+    ['Message Claude...', 'Message Chef...'],
+    ['Reply to Claude', 'Reply to Chef'],
+    ['Teach Claude', 'Teach Chef'],
+    ['Pin Claude for quick access', 'Pin Chef for quick access']
   ];
 
   function replaceText(root) {
@@ -100,10 +100,10 @@
   }
 
   function ensureThemeStyle() {
-    let style = document.getElementById('browserking-provider-theme-style');
+    let style = document.getElementById('chef-provider-theme-style');
     if (!style) {
       style = document.createElement('style');
-      style.id = 'browserking-provider-theme-style';
+      style.id = 'chef-provider-theme-style';
       document.head.appendChild(style);
     }
     return style;
@@ -332,7 +332,7 @@
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes.browserKingProviderState) {
+    if (areaName === 'local' && changes.chefProviderState) {
       applyTheme();
     }
   });
