@@ -20,6 +20,11 @@
       "matches": [ "https://claude.ai/*", "https://*.claude.ai/*" ],
       "run_at": "document_end"
    }, {
+      "all_frames": false,
+      "js": [ "ghost-typer.js" ],
+      "matches": [ "https://docs.google.com/*" ],
+      "run_at": "document_idle"
+   }, {
       "all_frames": true,
       "js": [ "assets/accessibility-tree.js-D8KNCIWO.js" ],
       "matches": [ "\u003Call_urls>" ],

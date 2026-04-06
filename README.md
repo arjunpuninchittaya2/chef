@@ -26,6 +26,50 @@ Chef is a Chrome extension that gives any LLM the ability to see and control you
 
 Chef uses OpenRouter to provide access to models from OpenAI, Anthropic, Google, xAI, and many other providers through a single API.
 
+## AI Tools
+
+The following tools are available to the AI model during a session. Built-in browser tools are provided by the underlying Claude for Chrome extension; Chef-specific tools are added by the API adapter.
+
+### Browser Automation Tools (built-in)
+
+| Tool | Description |
+|------|-------------|
+| `computer` | Takes screenshots, moves the mouse, clicks, types, scrolls, and navigates the browser |
+| `bash` | Runs shell commands (if enabled) |
+| `str_replace_editor` | Reads and edits files using string replacement |
+| `web_search` | Searches the web and returns results |
+
+### Chef Custom Tools
+
+| Tool | Description |
+|------|-------------|
+| `google_docs_slow_type` | Types text slowly and naturally into the focused Google Docs document, simulating human typing with realistic timing, occasional typos, and self-corrections. Requires a Google Docs page to be open in the active tab. |
+| `group_tabs` | Groups one or more Chrome browser tabs together with an optional title and color badge. Replaces the removed automatic tab-grouping behaviour — the AI groups tabs explicitly on your request. |
+
+#### `google_docs_slow_type` parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `text` | string | ✅ | Text to type. Use `\n` for newlines and `\t` for tabs. |
+
+#### `group_tabs` parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `tab_ids` | integer[] | ✅ | Chrome tab IDs to group. |
+| `title` | string | | Label for the tab group. |
+| `color` | string | | Badge color: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, or `orange`. |
+
+### Ghost Typer Keyboard Shortcuts (Google Docs)
+
+The ghost-typer content script also provides manual keyboard shortcuts on any Google Docs page:
+
+| Shortcut | Action |
+|----------|--------|
+| **Ctrl+Alt+V** | Slow-paste clipboard contents with human-like timing and typos |
+| **Alt+B** | Load clipboard and enter ghost mode (type keystroke-by-keystroke) |
+| **Alt+G** | Stop ghost mode or slow paste |
+
 ## Supported Models via OpenRouter
 
 OpenRouter provides access to 100+ models from leading providers:
