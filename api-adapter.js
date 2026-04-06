@@ -53,6 +53,95 @@
   const originalFetch = globalThis.fetch.bind(globalThis);
   const registry = globalThis.ChefRegistry || null;
 
+  // ── Custom tools exposed to the AI ────────────────────────────────
+  const CUSTOM_TOOLS = [
+    {
+      name: 'google_docs_slow_type',
+      description: 'Types text slowly and naturally into the currently focused Google Docs document, simulating human typing with realistic timing, occasional typos, and self-corrections. Use this when the user asks you to write or type text into a Google Doc.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          text: {
+            type: 'string',
+            description: 'The text to type into the Google Doc. Use \\n for newlines and \\t for tabs.'
+          }
+        },
+        required: ['text']
+      }
+    },
+    {
+      name: 'group_tabs',
+      description: 'Groups one or more Chrome browser tabs together with an optional title and color badge. Use this to help the user organise their tabs.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          tab_ids: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: 'Array of Chrome tab IDs to group together.'
+          },
+          title: {
+            type: 'string',
+            description: 'Label for the tab group (optional).'
+          },
+          color: {
+            type: 'string',
+            enum: ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'],
+            description: 'Color for the tab group badge (optional).'
+          }
+        },
+        required: ['tab_ids']
+      }
+    }
+  ];
+
+  const CUSTOM_TOOL_NAMES = new Set(CUSTOM_TOOLS.map(t => t.name));
+
+  async function executeCustomTool(toolName, toolInput) {
+    if (toolName === 'google_docs_slow_type') {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        const tab = tabs && tabs[0];
+        if (!tab || !tab.id) {
+          return 'Error: No active tab found.';
+        }
+        try {
+          await chrome.tabs.sendMessage(tab.id, { type: 'GHOST_TYPE', text: toolInput.text || '' });
+          return `Typing started — ${String(toolInput.text || '').length} characters will appear in the Google Doc over the next few seconds.`;
+        } catch (e) {
+          return `Error: Ghost typer is not active on this page. Please ensure you have a Google Docs document open in the active tab. Details: ${e.message}`;
+        }
+      } catch (e) {
+        return `Error: ${e.message}`;
+      }
+    }
+
+    if (toolName === 'group_tabs') {
+      try {
+        const tabIds = toolInput.tab_ids;
+        if (!Array.isArray(tabIds) || tabIds.length === 0) {
+          return 'Error: tab_ids must be a non-empty array of integers.';
+        }
+        const originalGroup = globalThis.__chefOriginalTabsGroup;
+        if (!originalGroup) {
+          return 'Error: Tab grouping API is not available.';
+        }
+        const groupId = await originalGroup({ tabIds });
+        if (toolInput.title !== undefined || toolInput.color !== undefined) {
+          const updateParams = {};
+          if (toolInput.title !== undefined) updateParams.title = toolInput.title;
+          if (toolInput.color !== undefined) updateParams.color = toolInput.color;
+          await chrome.tabGroups.update(groupId, updateParams);
+        }
+        return `Successfully grouped ${tabIds.length} tab(s) into group ID ${groupId}${toolInput.title ? ` with title "${toolInput.title}"` : ''}.`;
+      } catch (e) {
+        return `Error: ${e.message}`;
+      }
+    }
+
+    return `Error: Unknown tool "${toolName}".`;
+  }
+
   async function writeDebugLog(entry) {
     try {
       if (!globalThis.chrome?.storage?.local) {
@@ -773,7 +862,7 @@
     };
   }
 
-  function buildAnthropicSSETransform(upstreamResponse, requestedModel) {
+  function buildAnthropicSSETransform(upstreamResponse, requestedModel, loopContext) {
     const messageId = randomId('msg');
     const activeToolBlocks = new Map();
 
@@ -784,6 +873,10 @@
         let finishReason = 'end_turn';
         let finalUsage = null;
         let buffer = '';
+
+        // Custom tool tracking: collect calls that the AI directs at our custom tools.
+        const customToolCalls = new Map(); // OpenAI stream key -> {id, name, argsJson}
+        let hasNativeToolCalls = false;
 
         controller.enqueue(sseChunk('message_start', {
           type: 'message_start',
@@ -812,7 +905,7 @@
           }
 
           activeToolBlocks.forEach((toolState) => {
-            if (toolState.started) {
+            if (toolState.started && !toolState.isCustom) {
               controller.enqueue(sseChunk('content_block_stop', {
                 type: 'content_block_stop',
                 index: toolState.anthropicIndex
@@ -928,13 +1021,22 @@
                 let toolState = activeToolBlocks.get(key);
 
                 if (!toolState) {
+                  const initialName = toolDelta.function?.name || null;
+                  const isCustom = Boolean(initialName && CUSTOM_TOOL_NAMES.has(initialName));
                   toolState = {
-                    anthropicIndex: nextContentIndex++,
+                    anthropicIndex: isCustom ? -1 : nextContentIndex++,
                     started: false,
                     id: toolDelta.id || randomId('toolu'),
-                    name: toolDelta.function?.name || null
+                    name: initialName,
+                    isCustom,
+                    argsJson: ''
                   };
                   activeToolBlocks.set(key, toolState);
+                  if (isCustom) {
+                    customToolCalls.set(key, toolState);
+                  } else {
+                    hasNativeToolCalls = true;
+                  }
                 }
 
                 if (toolDelta.id) {
@@ -945,6 +1047,15 @@
                   toolState.name = toolDelta.function.name;
                 }
 
+                // For custom tools: buffer arguments silently without emitting SSE events.
+                if (toolState.isCustom) {
+                  if (toolDelta.function?.arguments) {
+                    toolState.argsJson += toolDelta.function.arguments;
+                  }
+                  return;
+                }
+
+                // For native tools: emit SSE events as usual.
                 if (!toolState.started && toolState.name) {
                   controller.enqueue(sseChunk('content_block_start', {
                     type: 'content_block_start',
@@ -974,6 +1085,72 @@
           }
 
           closeBlocks();
+
+          // If the model called only custom tools (and no native tools), execute them
+          // transparently and continue the conversation without exposing tool_use to the extension.
+          const hasOnlyCustomToolCalls = customToolCalls.size > 0 && !hasNativeToolCalls && loopContext !== undefined;
+          if (hasOnlyCustomToolCalls) {
+            try {
+              const followUpMessages = [...loopContext.messages];
+
+              const allToolCallsList = Array.from(activeToolBlocks.values()).map(ts => ({
+                id: ts.id,
+                type: 'function',
+                function: { name: ts.name, arguments: ts.argsJson || '{}' }
+              }));
+
+              followUpMessages.push({
+                role: 'assistant',
+                content: null,
+                tool_calls: allToolCallsList
+              });
+
+              for (const [, ts] of customToolCalls) {
+                const toolInput = parseToolArguments(ts.argsJson);
+                const toolResult = await executeCustomTool(ts.name, toolInput);
+                followUpMessages.push({
+                  role: 'tool',
+                  tool_call_id: ts.id,
+                  content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult)
+                });
+              }
+
+              const followUpReq = { ...loopContext.openAIRequest, messages: followUpMessages, stream: false };
+              const followUpResp = await originalFetch(loopContext.upstreamUrl, {
+                method: 'POST',
+                headers: loopContext.headers,
+                body: JSON.stringify(followUpReq)
+              });
+
+              if (followUpResp.ok) {
+                const followUpData = await followUpResp.json();
+                const followUpChoice = followUpData?.choices?.[0];
+                const followUpContent = followUpChoice?.message?.content;
+                if (followUpContent) {
+                  const blockIndex = nextContentIndex++;
+                  controller.enqueue(sseChunk('content_block_start', {
+                    type: 'content_block_start',
+                    index: blockIndex,
+                    content_block: { type: 'text', text: '' }
+                  }));
+                  controller.enqueue(sseChunk('content_block_delta', {
+                    type: 'content_block_delta',
+                    index: blockIndex,
+                    delta: { type: 'text_delta', text: followUpContent }
+                  }));
+                  controller.enqueue(sseChunk('content_block_stop', {
+                    type: 'content_block_stop',
+                    index: blockIndex
+                  }));
+                  finishReason = mapFinishReason(followUpChoice?.finish_reason || 'stop');
+                  if (followUpData?.usage) finalUsage = followUpData.usage;
+                }
+              }
+            } catch (toolError) {
+              console.error('[API Adapter] Custom tool follow-up failed:', toolError);
+            }
+          }
+
           controller.enqueue(sseChunk('message_delta', {
             type: 'message_delta',
             delta: {
@@ -1006,6 +1183,17 @@
   async function proxyAnthropicMessages(input, init) {
     const headers = mergeHeaders(input, init);
     const anthropicRequest = await readJsonBody(input, init);
+
+    // Inject custom tools so the AI knows about google_docs_slow_type and group_tabs.
+    if (!Array.isArray(anthropicRequest.tools)) {
+      anthropicRequest.tools = [];
+    }
+    for (const ct of CUSTOM_TOOLS) {
+      if (!anthropicRequest.tools.some(t => t.name === ct.name)) {
+        anthropicRequest.tools.push(ct);
+      }
+    }
+
     const providerConfig = await getProviderConfig();
     const provider = getActiveProvider(providerConfig);
     const requestedModel = resolveTargetModel(anthropicRequest, provider);
@@ -1165,19 +1353,72 @@
         contentType,
         status: upstreamResponse.status
       });
-      return new Response(buildAnthropicSSETransform(upstreamResponse, requestedModel), {
+      const loopContext = {
+        openAIRequest,
+        headers,
+        upstreamUrl,
+        messages: openAIRequest.messages || []
+      };
+      return new Response(buildAnthropicSSETransform(upstreamResponse, requestedModel, loopContext), {
         status: 200,
         headers: buildSSEHeaders()
       });
     }
 
-    const data = await upstreamResponse.json();
+    let data = await upstreamResponse.json();
     await writeDebugLog({
       phase: 'response',
       status: upstreamResponse.status,
       contentType,
       data
     });
+
+    // Non-streaming custom tool loop: execute custom tools transparently without the
+    // extension ever seeing the tool_use / tool_result round-trips.
+    const MAX_TOOL_EXECUTION_LOOPS = 10;
+    let loopMessages = [...(openAIRequest.messages || [])];
+    let loopCount = 0;
+    while (loopCount < MAX_TOOL_EXECUTION_LOOPS) {
+      loopCount++;
+      const choice = data?.choices?.[0];
+      const toolCalls = ensureArray(choice?.message?.tool_calls);
+      const customCalls = toolCalls.filter(tc => CUSTOM_TOOL_NAMES.has(tc.function?.name));
+      const nativeCalls = toolCalls.filter(tc => !CUSTOM_TOOL_NAMES.has(tc.function?.name));
+
+      // Stop if there are no custom calls, or if custom and native calls are mixed
+      // (mixed case: let the extension handle the native tools; custom ones may fail gracefully).
+      if (customCalls.length === 0 || nativeCalls.length > 0) break;
+
+      loopMessages.push({
+        role: 'assistant',
+        content: choice?.message?.content || null,
+        tool_calls: toolCalls
+      });
+
+      for (const tc of customCalls) {
+        const toolInput = parseToolArguments(tc.function?.arguments);
+        const toolResult = await executeCustomTool(tc.function.name, toolInput);
+        loopMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id || randomId('call'),
+          content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult)
+        });
+      }
+
+      try {
+        const followUpReq = { ...openAIRequest, messages: loopMessages, stream: false };
+        const followUpResp = await originalFetch(upstreamUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(followUpReq)
+        });
+        if (!followUpResp.ok) break;
+        data = await followUpResp.json();
+      } catch (e) {
+        console.error('[API Adapter] Non-streaming custom tool follow-up failed:', e);
+        break;
+      }
+    }
 
     if (openAIRequest.stream) {
       const anthropicMessage = convertOpenAIMessageToAnthropic(data, requestedModel);

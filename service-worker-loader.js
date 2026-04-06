@@ -1,5 +1,7 @@
 // Load shared provider registry first.
 import './provider-registry.js';
+// Disable automatic tab grouping before the compiled service worker runs.
+import './tab-group-control.js';
 // Load API adapter first to intercept fetch calls
 import './api-adapter.js';
 // Load auth bypass to mock profile/OAuth API calls
