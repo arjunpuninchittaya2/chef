@@ -1088,7 +1088,8 @@
 
           // If the model called only custom tools (and no native tools), execute them
           // transparently and continue the conversation without exposing tool_use to the extension.
-          if (customToolCalls.size > 0 && !hasNativeToolCalls && loopContext) {
+          const hasOnlyCustomToolCalls = customToolCalls.size > 0 && !hasNativeToolCalls && loopContext !== undefined;
+          if (hasOnlyCustomToolCalls) {
             try {
               const followUpMessages = [...loopContext.messages];
 
@@ -1374,9 +1375,10 @@
 
     // Non-streaming custom tool loop: execute custom tools transparently without the
     // extension ever seeing the tool_use / tool_result round-trips.
+    const MAX_TOOL_EXECUTION_LOOPS = 10;
     let loopMessages = [...(openAIRequest.messages || [])];
     let loopCount = 0;
-    while (loopCount < 10) {
+    while (loopCount < MAX_TOOL_EXECUTION_LOOPS) {
       loopCount++;
       const choice = data?.choices?.[0];
       const toolCalls = ensureArray(choice?.message?.tool_calls);
