@@ -16,7 +16,7 @@
 
   const SKIP_PERMS_PROMPT = SYSTEM_PROMPT + '\n\nYou have been granted permission to act without asking for confirmation on each action. Proceed efficiently with the task.';
 
-  const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+  const OPENROUTER_BASE_URL = 'https://ai.hackclub.com/proxy/v1';
 
   const MOCK_ORG = {
     uuid: 'custom-provider-org-00000000',

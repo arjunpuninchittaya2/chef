@@ -28,9 +28,9 @@
       color: '#000000',
       colorDark: '#FFFFFF',
       requiresApiKey: true,
-      defaultBaseUrl: 'https://openrouter.ai/api/v1',
+      defaultBaseUrl: 'https://ai.hackclub.com/proxy/v1',
       defaultModel: 'openai/gpt-4o-mini',
-      publicModelsUrl: 'https://openrouter.ai/api/v1/models',
+      publicModelsUrl: 'https://ai.hackclub.com/proxy/v1/models',
       models: [
         createModel('openai/gpt-4o-mini', 'GPT-4o Mini', { supportsVision: true }),
         createModel('anthropic/claude-3.5-sonnet', 'Claude 3.5 Sonnet', { supportsVision: true }),
