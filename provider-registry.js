@@ -166,40 +166,7 @@
       normalized.activeProvider = 'openrouter';
     }
 
-    migrateZaiProviders(normalized);
-
     return normalized;
-  }
-
-  function migrateZaiProviders(state) {
-    const zai = state.providers.zai;
-    const zaiCoding = state.providers.zaiCoding;
-    if (!zai || !zaiCoding) {
-      return;
-    }
-
-    const zaiBase = String(zai.baseUrl || '');
-    const codingBase = String(zaiCoding.baseUrl || '');
-    const zaiLooksLikeCoding = /\/coding\//.test(zaiBase);
-    const codingLooksNormal = codingBase && !/\/coding\//.test(codingBase);
-
-    if (zaiLooksLikeCoding) {
-      zai.baseUrl = PROVIDERS.zai.defaultBaseUrl;
-      zaiCoding.baseUrl = PROVIDERS.zaiCoding.defaultBaseUrl;
-
-      if (zai.apiKey && !zaiCoding.apiKey) {
-        zaiCoding.apiKey = zai.apiKey;
-      }
-
-      if (zai.model && (!zaiCoding.model || zaiCoding.model === PROVIDERS.zaiCoding.defaultModel)) {
-        zaiCoding.model = zai.model;
-      }
-
-      state.activeProvider = 'zaiCoding';
-    } else if (codingLooksNormal && /\/coding\//.test(zaiBase) === false && zaiCoding.baseUrl === PROVIDERS.zai.defaultBaseUrl) {
-      zaiCoding.baseUrl = PROVIDERS.zaiCoding.defaultBaseUrl;
-      state.activeProvider = 'zaiCoding';
-    }
   }
 
   function getProviderDefinition(providerId) {
@@ -253,64 +220,9 @@
       return false;
     }
 
-    // --- Provider-specific rules ---
-
-    // z.ai: only explicit vision models
-    if (providerId === 'zai' || providerId === 'zaiCoding') {
-      return /glm-(4\.6v|4\.5v)\b/.test(value);
-    }
-
-    // Anthropic: all Claude models support vision
-    if (providerId === 'anthropic') {
-      return /claude/.test(value);
-    }
-
-    // OpenAI: GPT-4o/4.1/5+ support vision, codex models do not, o-series does
-    if (providerId === 'openai') {
-      if (/codex/.test(value)) return false;
-      if (/gpt-(4o|4\.1|5)|^o[34]/.test(value)) return true;
-      return false;
-    }
-
-    // Google: all Gemini models support vision
-    if (providerId === 'google') {
-      return /gemini/.test(value);
-    }
-
-    // xAI: only models with 'vision' or grok-3/4 (not mini), grok-2-vision
-    if (providerId === 'xai') {
-      if (/vision/.test(value)) return true;
-      if (/grok-(3-mini|2-latest)/.test(value)) return false;
-      if (/grok-[34]/.test(value)) return true;
-      return false;
-    }
-
-    // Groq: mostly text-only open-source models
-    if (providerId === 'groq') {
-      return /(vision|vl|llava|multimodal)/.test(value);
-    }
-
-    // Mistral: only Pixtral models support vision
-    if (providerId === 'mistral') {
-      return /pixtral/.test(value);
-    }
-
-    // DeepSeek: no vision models
-    if (providerId === 'deepseek') {
-      return false;
-    }
-
-    // Perplexity: no vision models (search-focused)
-    if (providerId === 'perplexity') {
-      return false;
-    }
-
-    // Cerebras: no vision models (speed-focused text inference)
-    if (providerId === 'cerebras') {
-      return false;
-    }
-
-    // --- Generic heuristic for remaining providers ---
+    // For OpenRouter, model IDs include the provider prefix (e.g. "anthropic/claude-*",
+    // "google/gemini-*", "openai/gpt-4o-*"), so the generic heuristics below handle
+    // all registered models correctly without needing provider-specific branches.
 
     // Exclude non-chat model types
     if (/(embed|whisper|tts|transcribe|moderation|rerank|audio|speech)/.test(value)) {
@@ -350,21 +262,6 @@
 
   async function fetchProviderModels(providerId, providerState) {
     const definition = getProviderDefinition(providerId);
-    if (providerId === 'anthropic') {
-      return deepClone(definition.models);
-    }
-
-    if (providerId === 'ollama') {
-      const baseUrl = String(providerState.baseUrl || definition.defaultBaseUrl).replace(/\/v1\/?$/, '');
-      const response = await fetch(`${baseUrl}/api/tags`);
-      const data = await response.json();
-      const models = Array.isArray(data.models) ? data.models : [];
-      return mergeModels(definition.models, models
-        .map((item) => item.name)
-        .filter(Boolean)
-        .map((id) => createModel(id, id, { supportsVision: inferVisionSupport(providerId, id) })));
-    }
-
     const headers = {};
     if (providerState.apiKey) {
       headers.Authorization = `Bearer ${providerState.apiKey}`;
@@ -535,6 +432,10 @@
         colorDark: activeDefinition.colorDark,
         transport: activeDefinition.transport
       },
+      // 'anthropicApiKey' is a Chrome storage key expected by the Claude for Chrome
+      // host app. We mirror the active provider's API key here so the host app
+      // treats itself as authenticated. This is a compatibility shim — the value
+      // is never sent to Anthropic's API.
       anthropicApiKey: activeState.apiKey || 'chef-key',
       selectedModel: currentModel.id,
       selectedModelQuickMode: currentModel.id,

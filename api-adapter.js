@@ -1,10 +1,12 @@
 /**
  * API Adapter
  *
- * Keeps the stock Claude extension flow intact while translating its
- * Anthropic Messages traffic to an OpenAI-compatible chat completions API.
- * This is primarily used with z.ai's coding endpoint so multimodal input
- * and tool calls behave like the original extension.
+ * Keeps the stock Claude for Chrome extension flow intact by intercepting its
+ * fetch calls to api.anthropic.com and translating Anthropic Messages requests
+ * into OpenAI-compatible chat completions requests routed through OpenRouter.
+ * Responses are translated back to Anthropic format before the host extension
+ * sees them. All AI API traffic goes exclusively through OpenRouter (or any
+ * configured OpenAI-compatible provider).
  */
 
 (function() {
@@ -14,14 +16,7 @@
 
   const SKIP_PERMS_PROMPT = SYSTEM_PROMPT + '\n\nYou have been granted permission to act without asking for confirmation on each action. Proceed efficiently with the task.';
 
-  const DEFAULT_PROVIDER_CONFIG = {
-    provider: 'zai',
-    zai: {
-      baseUrl: 'https://api.z.ai/api/coding/paas/v4',
-      apiKey: '',
-      model: 'glm-4.6v'
-    }
-  };
+  const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
   const MOCK_ORG = {
     uuid: 'custom-provider-org-00000000',
@@ -1211,44 +1206,14 @@
     }
 
     if (provider.transport === 'anthropic') {
-      const upstreamUrl = `${String(provider.baseUrl || 'https://api.anthropic.com/v1').replace(/\/+$/, '')}/messages`;
-      headers.delete('Authorization');
-      headers.set('x-api-key', provider.apiKey || '');
-      headers.set('anthropic-version', headers.get('anthropic-version') || '2023-06-01');
-
-      const upstreamPayload = {
-        ...anthropicRequest,
-        model: requestedModel
-      };
-
-      await writeDebugLog({
-        phase: 'anthropic_passthrough_request',
-        requestedModel,
-        upstreamUrl,
-        anthropicRequest: upstreamPayload
-      });
-
-      const response = await originalFetch(upstreamUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(upstreamPayload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        await writeDebugLog({
-          phase: 'anthropic_passthrough_error',
-          status: response.status,
-          body: errorText
-        });
-        return createAnthropicError(`Provider error (${response.status}): ${errorText}`, response.status);
-      }
-
-      return response;
+      // The Anthropic native passthrough has been removed. All traffic is
+      // routed through OpenRouter (or another OpenAI-compatible provider).
+      // If somehow a stale provider config with transport='anthropic' is
+      // loaded, fall through to the OpenAI-compat path below.
     }
 
     // Google Gemini OpenAI-compat endpoint uses ?key= param; remove Bearer header to avoid conflicts
-    let rawUpstreamUrl = `${String(provider.baseUrl || DEFAULT_PROVIDER_CONFIG.zai.baseUrl).replace(/\/+$/, '')}/chat/completions`;
+    let rawUpstreamUrl = `${String(provider.baseUrl || OPENROUTER_BASE_URL).replace(/\/+$/, '')}/chat/completions`;
     if (provider.id === 'google' && provider.apiKey) {
       rawUpstreamUrl = `${rawUpstreamUrl}?key=${encodeURIComponent(provider.apiKey)}`;
       headers.delete('Authorization');

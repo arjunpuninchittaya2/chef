@@ -22,6 +22,10 @@
       if (!result.tokenExpiry || result.tokenExpiry < Date.now()) {
         updates.tokenExpiry = Date.now() + (365 * 24 * 60 * 60 * 1000);
       }
+      // 'anthropicApiKey' is a Chrome storage key expected by the Claude for Chrome
+      // host app. We keep it populated with a placeholder so the host app treats
+      // itself as authenticated. This is a compatibility shim — we never send this
+      // value to Anthropic's API.
       if (!result.anthropicApiKey) updates.anthropicApiKey = 'custom-provider-key';
 
       if (Object.keys(updates).length > 0) {
