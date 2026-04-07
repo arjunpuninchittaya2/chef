@@ -40,7 +40,7 @@
           if (micButton && def?.color) {
             micButton.style.setProperty('--mic-accent', def.color);
           }
-        });
+        }).catch(() => {});
       }
     } catch (_) {}
     return '#BF8534';
