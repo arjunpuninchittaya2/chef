@@ -729,11 +729,16 @@
     const supportsTools = !noToolsProviders.includes(providerId);
 
     // Providers where tool_choice:'required' is not supported — fall back to 'auto'
-    const noRequiredToolChoice = ['google', 'perplexity', 'cerebras'];
+    // OpenRouter routes can reject required tool selection depending on the chosen endpoint.
+    const noRequiredToolChoice = ['openrouter', 'google', 'perplexity', 'cerebras'];
 
     if (Array.isArray(body.tools) && body.tools.length > 0 && supportsTools) {
       openAIRequest.tools = convertAnthropicToolsToOpenAI(body.tools);
       let toolChoice = convertAnthropicToolChoice(body.tool_choice);
+
+      if (providerId === 'openrouter' && toolChoice !== undefined && toolChoice !== 'auto' && toolChoice !== 'none') {
+        toolChoice = 'auto';
+      }
 
       if (toolChoice !== undefined) {
         if (toolChoice === 'required' && noRequiredToolChoice.includes(providerId)) {

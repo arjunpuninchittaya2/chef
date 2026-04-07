@@ -112,13 +112,47 @@
     return Boolean(globalThis.chrome?.storage?.local);
   }
 
+  function isExtensionContextInvalidated(error) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return /extension context invalidated/i.test(message);
+  }
+
+  async function safeStorageGet(keys) {
+    try {
+      return await chrome.storage.local.get(keys);
+    } catch (error) {
+      if (isExtensionContextInvalidated(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  async function safeStorageSet(values) {
+    try {
+      await chrome.storage.local.set(values);
+      return true;
+    } catch (error) {
+      if (isExtensionContextInvalidated(error)) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
   async function loadState() {
     const fallback = buildDefaultState();
     if (!isStorageAvailable()) {
       return fallback;
     }
 
-    const stored = await chrome.storage.local.get([STORAGE_KEY, LEGACY_PROVIDER_KEY]);
+    const stored = await safeStorageGet([STORAGE_KEY, LEGACY_PROVIDER_KEY]);
+    if (!stored) {
+      return fallback;
+    }
+
     const state = stored?.[STORAGE_KEY];
     if (state?.providers) {
       return normalizeState(state);
@@ -421,7 +455,7 @@
     const activeState = getActiveProviderState(state);
     const currentModel = getCurrentModel(state);
 
-    await chrome.storage.local.set({
+    const stored = await safeStorageSet({
       [STORAGE_KEY]: state,
       [LEGACY_PROVIDER_KEY]: getLegacyProviderConfig(state),
       chefBrand: BRAND,
@@ -448,6 +482,10 @@
       lastPermissionModePreference: 'ask',
       features: buildFeaturePayload(state)
     });
+
+    if (!stored) {
+      return state;
+    }
 
     return state;
   }
